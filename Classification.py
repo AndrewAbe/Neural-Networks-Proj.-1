@@ -25,18 +25,17 @@ y_train_tensor = torch.FloatTensor(y_train).view(-1, 1)
 X_test_tensor = torch.FloatTensor(X_test)
 y_test_tensor = torch.FloatTensor(y_test).view(-1, 1)
 
-# Define the neural network
 class IonosphereNN(nn.Module):
     def __init__(self):
         super(IonosphereNN, self).__init__()
         self.fc1 = nn.Linear(34, 64)
         self.fc2 = nn.Linear(64, 32)
         self.fc3 = nn.Linear(32, 1)
-    
+
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        return self.fc3(x)  # Output without activation, BCEWithLogitsLoss later
+        return self.fc3(x)  
 
 # Create the TensorDatasets and DataLoaders
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
@@ -49,160 +48,63 @@ model = IonosphereNN()
 criterion = nn.BCEWithLogitsLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
-# Training loop
-num_epochs = 100
+# Initialize lists to keep track of the losses and accuracies
+train_losses = []
+test_losses = []
+test_accuracies = []
+
+num_epochs = 400
+
 for epoch in range(num_epochs):
+    # Training phase
     model.train()
+    train_loss = 0
     for X_batch, y_batch in train_loader:
         optimizer.zero_grad()
         outputs = model(X_batch)
         loss = criterion(outputs, y_batch)
         loss.backward()
         optimizer.step()
-    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
+        train_loss += loss.item() * X_batch.size(0)  # Multiply by batch size for total loss
+    train_loss /= len(train_loader.dataset)
+    train_losses.append(train_loss)
 
-# Evaluation
-model.eval()
-with torch.no_grad():
+    # Testing phase
+    model.eval()
+    test_loss = 0
     correct = 0
     total = 0
-    for X_batch, y_batch in test_loader:
-        outputs = model(X_batch)
-        predicted = torch.round(torch.sigmoid(outputs))
-        total += y_batch.size(0)
-        correct += (predicted == y_batch).sum().item()
-    accuracy = 100 * correct / total
-    print(f'Accuracy on test set: {accuracy:.2f}%')
+    with torch.no_grad():
+        for X_batch, y_batch in test_loader:
+            outputs = model(X_batch)
+            loss = criterion(outputs, y_batch)
+            test_loss += loss.item() * X_batch.size(0)
+            predicted = torch.round(torch.sigmoid(outputs))
+            total += y_batch.size(0)
+            correct += (predicted == y_batch).sum().item()
+    test_loss /= len(test_loader.dataset)
+    test_losses.append(test_loss)
 
-"""old code-kinda works
-import pandas as pd
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import TensorDataset, DataLoader
-import torch.optim as optim
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from ucimlrepo import fetch_ucirepo
+    test_accuracy = correct / total
+    test_accuracies.append(test_accuracy)
 
-class IonosphereNN(nn.Module):
-    def __init__(self, input_size, hidden_size1, hidden_size2, output_size):
-        super(IonosphereNN, self).__init__()
-        # Define the first hidden layer
-        self.hidden1 = nn.Linear(input_size, hidden_size1)
-        # Define the second hidden layer
-        self.hidden2 = nn.Linear(hidden_size1, hidden_size2)
-        # Define the output layer
-        self.output = nn.Linear(hidden_size2, output_size)
-        
-    def forward(self, x):
-        # Pass the input through the first hidden layer, then apply a ReLU activation
-        x = F.relu(self.hidden1(x))
-        # Pass through the second hidden layer, then apply another ReLU activation
-        x = F.relu(self.hidden2(x))
-        # Pass through the output layer
-        x = self.output(x)
-        return x
+    print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}')
 
-#given from website-import start
-from ucimlrepo import fetch_ucirepo 
-  
-# fetch dataset 
-ionosphere = fetch_ucirepo(id=52) 
-  
-# data (as pandas dataframes) 
-X = ionosphere.data.features 
-y = ionosphere.data.targets 
-  
-# metadata 
-#print(ionosphere.metadata) 
-  
-# variable information 
-#print(ionosphere.variables) 
-#given from website-end
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=5)
+# Plotting the training and test losses
+plt.figure(figsize=(10, 5))
+plt.plot(train_losses, label='Training loss')
+plt.plot(test_losses, label='Test loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.title('Loss over Epochs')
+plt.legend()
+plt.show()
 
-input_size = 34  # Number of input features
-hidden_size1 = 64
-hidden_size2 = 32
-output_size = 1  # For binary classification
-
-# Initialize the model
-model = IonosphereNN(input_size, hidden_size1, hidden_size2, output_size)
-
-# Fetch dataset
-ionosphere = fetch_ucirepo(id=52)
-
-# Data (as pandas dataframes)
-X = ionosphere.data.features
-y = ionosphere.data.targets
-
-# Encode the 'Class' target variable
-label_encoder = LabelEncoder()
-y_encoded = label_encoder.fit_transform(y)
-y = pd.DataFrame(y_encoded, columns=['Class'])  # Creates a new DataFrame with encoded labels
-
-# Split the dataset into training and test sets
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# Neural Network Definition
-class IonosphereNN(nn.Module):
-    def __init__(self):
-        super(IonosphereNN, self).__init__()
-        self.fc1 = nn.Linear(34, 64)  # Assuming 34 features in the dataset
-        self.fc2 = nn.Linear(64, 32)
-        self.fc3 = nn.Linear(32, 1)  # Output layer
-
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)  # Using BCEWithLogitsLoss, so no sigmoid here
-        return x
-
-# Convert data to PyTorch tensors and create DataLoader
-X_train_tensor = torch.FloatTensor(X_train.values)
-y_train_tensor = torch.FloatTensor(y_train.values)
-X_test_tensor = torch.FloatTensor(X_test.values)
-y_test_tensor = torch.FloatTensor(y_test.values)
-
-train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
-
-# Initialize Model, Loss Function, and Optimizer
-model = IonosphereNN()
-criterion = nn.BCEWithLogitsLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-
-# Training Loop
-num_epochs = 100
-
-for epoch in range(num_epochs):
-    model.train()
-    for X_batch, y_batch in train_loader:
-        optimizer.zero_grad()
-        outputs = model(X_batch)
-        loss = criterion(outputs, y_batch)
-        loss.backward()
-        optimizer.step()
-
-    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
-
-# Evaluate the Model
-model.eval()
-with torch.no_grad():
-    correct = 0
-    total = 0
-    for X_batch, y_batch in test_loader:
-        outputs = model(X_batch)
-        predicted = torch.round(torch.sigmoid(outputs))
-        total += y_batch.size(0)
-        correct += (predicted == y_batch).sum().item()
-
-    accuracy = 100 * correct / total
-    print(f'Accuracy on test set: {accuracy:.2f}%')
-"""
+# Plotting the test accuracy
+plt.figure(figsize=(10, 5))
+plt.plot(test_accuracies, label='Test accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.title('Test Accuracy over Epochs')
+plt.legend()
+plt.show()
