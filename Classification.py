@@ -19,12 +19,7 @@ y_encoded = label_encoder.fit_transform(y).ravel()  # Ensure y_encoded is a 1D a
 # Split the dataset
 X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2, random_state=42)
 
-# Convert the numpy arrays to PyTorch tensors
-X_train_tensor = torch.FloatTensor(X_train)
-y_train_tensor = torch.FloatTensor(y_train).view(-1, 1)
-X_test_tensor = torch.FloatTensor(X_test)
-y_test_tensor = torch.FloatTensor(y_test).view(-1, 1)
-
+# Define the neural network
 class IonosphereNN(nn.Module):
     def __init__(self):
         super(IonosphereNN, self).__init__()
@@ -38,8 +33,8 @@ class IonosphereNN(nn.Module):
         return self.fc3(x)  
 
 # Create the TensorDatasets and DataLoaders
-train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+train_dataset = TensorDataset(torch.FloatTensor(X_train), torch.FloatTensor(y_train).view(-1, 1))
+test_dataset = TensorDataset(torch.FloatTensor(X_test), torch.FloatTensor(y_test).view(-1, 1))
 train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=64)
 
@@ -48,12 +43,17 @@ model = IonosphereNN()
 criterion = nn.BCEWithLogitsLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 
+# Initialize early stopping parameters
+early_stopping_patience = 20
+min_val_loss = np.inf
+epochs_no_improve = 0
+
 # Initialize lists to keep track of the losses and accuracies
 train_losses = []
 test_losses = []
 test_accuracies = []
 
-num_epochs = 400
+num_epochs = 1000
 
 for epoch in range(num_epochs):
     # Training phase
@@ -65,7 +65,7 @@ for epoch in range(num_epochs):
         loss = criterion(outputs, y_batch)
         loss.backward()
         optimizer.step()
-        train_loss += loss.item() * X_batch.size(0)  # Multiply by batch size for total loss
+        train_loss += loss.item() * X_batch.size(0)
     train_loss /= len(train_loader.dataset)
     train_losses.append(train_loss)
 
@@ -87,6 +87,16 @@ for epoch in range(num_epochs):
 
     test_accuracy = correct / total
     test_accuracies.append(test_accuracy)
+
+    # Early stopping logic
+    if test_loss < min_val_loss:
+        min_val_loss = test_loss
+        epochs_no_improve = 0
+    else:
+        epochs_no_improve += 1
+        if epochs_no_improve >= early_stopping_patience:
+            print('Early stopping!')
+            break
 
     print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}')
 
